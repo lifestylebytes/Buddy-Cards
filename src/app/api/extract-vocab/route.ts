@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { ExtractedWord } from "@/types/vocab";
 
-const client = new OpenAI();
+const client = new Anthropic();
 
 const VOCAB_JSON_FORMAT = `
 \`\`\`json
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No input provided" }, { status: 400 });
     }
 
-    let messageContent: OpenAI.Chat.ChatCompletionContentPart[];
+    let messageContent: Anthropic.Messages.MessageParam["content"];
 
     if (text) {
       messageContent = [
@@ -56,9 +56,11 @@ ${VOCAB_JSON_FORMAT}`,
     } else {
       messageContent = [
         {
-          type: "image_url",
-          image_url: {
-            url: `data:${mimeType || "image/jpeg"};base64,${imageBase64}`,
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mimeType || "image/jpeg",
+            data: imageBase64,
           },
         },
         {
@@ -73,15 +75,15 @@ ${VOCAB_JSON_FORMAT}`,
       ];
     }
 
-    const response = await client.chat.completions.create({
-      model: "gpt-4o",
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       messages: [{ role: "user", content: messageContent }],
     });
 
-    const responseText = response.choices[0]?.message?.content ?? "";
+    const responseText =
+      response.content[0].type === "text" ? response.content[0].text : "";
 
-    // Extract JSON from response
     const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) ||
       responseText.match(/\[[\s\S]*\]/) || [null, responseText];
     const jsonStr = jsonMatch[1] || jsonMatch[0] || responseText;
