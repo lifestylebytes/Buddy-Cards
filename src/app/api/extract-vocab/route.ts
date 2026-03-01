@@ -4,37 +4,7 @@ import { ExtractedWord } from "@/types/vocab";
 
 const client = new Anthropic();
 
-export async function POST(req: NextRequest) {
-  try {
-    const { imageBase64, mimeType } = await req.json();
-
-    if (!imageBase64) {
-      return NextResponse.json({ error: "No image provided" }, { status: 400 });
-    }
-
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mimeType || "image/jpeg",
-                data: imageBase64,
-              },
-            },
-            {
-              type: "text",
-              text: `이 책 페이지 이미지를 분석해주세요. 밑줄이 그어진 단어나 구문들을 찾아서 어휘 정보를 추출해주세요.
-
-밑줄 친 단어가 없다면, 페이지에서 학습할 만한 고급 어휘를 최대 10개 골라주세요.
-
-각 단어에 대해 다음 JSON 배열 형식으로 정확히 반환해주세요:
-
+const VOCAB_JSON_FORMAT = `
 \`\`\`json
 [
   {
@@ -45,25 +15,73 @@ export async function POST(req: NextRequest) {
     "koreanDefinition": "한국어 정의",
     "exampleSentence": "Example sentence in English",
     "exampleSentenceKorean": "예문 한국어 번역",
-    "contextSentence": "책에서 실제로 사용된 문장 (있으면)"
+    "contextSentence": "텍스트에서 실제로 사용된 문장 (있으면)"
   }
 ]
 \`\`\`
 
-JSON만 반환하고 다른 텍스트는 포함하지 마세요.`,
-            },
-          ],
+JSON만 반환하고 다른 텍스트는 포함하지 마세요.`;
+
+export async function POST(req: NextRequest) {
+  try {
+    const { imageBase64, mimeType, text } = await req.json();
+
+    if (!imageBase64 && !text) {
+      return NextResponse.json({ error: "No input provided" }, { status: 400 });
+    }
+
+    let messageContent: Anthropic.Messages.MessageParam["content"];
+
+    if (text) {
+      messageContent = [
+        {
+          type: "text",
+          text: `다음 영어 텍스트에서 학습할 만한 고급 어휘를 최대 10개 골라주세요. 문맥을 파악해서 어휘 정보를 추출해주세요.
+
+텍스트:
+"""
+${text}
+"""
+
+각 단어에 대해 다음 JSON 배열 형식으로 정확히 반환해주세요:
+${VOCAB_JSON_FORMAT}`,
         },
-      ],
+      ];
+    } else {
+      messageContent = [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mimeType || "image/jpeg",
+            data: imageBase64,
+          },
+        },
+        {
+          type: "text",
+          text: `이 책 페이지 이미지를 분석해주세요. 밑줄이 그어진 단어나 구문들을 찾아서 어휘 정보를 추출해주세요.
+
+밑줄 친 단어가 없다면, 페이지에서 학습할 만한 고급 어휘를 최대 10개 골라주세요.
+
+각 단어에 대해 다음 JSON 배열 형식으로 정확히 반환해주세요:
+${VOCAB_JSON_FORMAT}`,
+        },
+      ];
+    }
+
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: messageContent }],
     });
 
-    const text =
+    const responseText =
       response.content[0].type === "text" ? response.content[0].text : "";
 
     // Extract JSON from response
-    const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) ||
-      text.match(/\[[\s\S]*\]/) || [null, text];
-    const jsonStr = jsonMatch[1] || jsonMatch[0] || text;
+    const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) ||
+      responseText.match(/\[[\s\S]*\]/) || [null, responseText];
+    const jsonStr = jsonMatch[1] || jsonMatch[0] || responseText;
 
     let words: ExtractedWord[] = [];
     try {
@@ -71,7 +89,7 @@ JSON만 반환하고 다른 텍스트는 포함하지 마세요.`,
       words = Array.isArray(parsed) ? parsed : [];
     } catch {
       // Try to find array in text
-      const arrMatch = text.match(/\[[\s\S]*\]/);
+      const arrMatch = responseText.match(/\[[\s\S]*\]/);
       if (arrMatch) {
         words = JSON.parse(arrMatch[0]);
       }

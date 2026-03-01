@@ -11,6 +11,7 @@ import {
   Layers,
 } from "lucide-react";
 import ImageUploader from "@/components/ImageUploader";
+import TextInputer from "@/components/TextInputer";
 import ExtractedWordsList from "@/components/ExtractedWordsList";
 import Flashcard from "@/components/Flashcard";
 import QuizMode, { QuizResult } from "@/components/QuizMode";
@@ -20,12 +21,14 @@ import { loadDeck, addCards, updateCard, deleteCard } from "@/lib/storage";
 
 type Tab = "scan" | "flashcard" | "quiz" | "deck";
 type ScanStep = "upload" | "extracted";
+type InputMode = "image" | "text";
 type QuizState = "playing" | "result";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("scan");
   const [cards, setCards] = useState<VocabCard[]>([]);
   const [scanStep, setScanStep] = useState<ScanStep>("upload");
+  const [inputMode, setInputMode] = useState<InputMode>("image");
   const [extractedWords, setExtractedWords] = useState<ExtractedWord[]>([]);
   const [imageBase64, setImageBase64] = useState("");
   const [flashcardIdx, setFlashcardIdx] = useState(0);
@@ -118,25 +121,42 @@ export default function Home() {
               <>
                 <div>
                   <h2 className="text-xl font-bold text-slate-800 mb-1">
-                    원서 사진 스캔
+                    어휘 추출
                   </h2>
                   <p className="text-sm text-slate-400">
-                    밑줄 친 부분을 AI가 자동으로 인식해요
+                    이미지나 텍스트로 어휘를 추출해요
                   </p>
                 </div>
-                <ImageUploader onExtracted={handleExtracted} />
-                <div className="grid grid-cols-3 gap-3 mt-4">
-                  {["📸 사진 찍기", "🖼️ 갤러리에서", "✏️ 밑줄 인식"].map(
-                    (item) => (
-                      <div
-                        key={item}
-                        className="bg-white rounded-2xl p-3 text-center text-sm text-slate-500 border border-slate-100"
-                      >
-                        {item}
-                      </div>
-                    )
-                  )}
+
+                {/* 이미지 / 텍스트 토글 */}
+                <div className="flex bg-slate-100 rounded-2xl p-1">
+                  <button
+                    onClick={() => setInputMode("image")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium transition-all ${
+                      inputMode === "image"
+                        ? "bg-white text-violet-600 shadow-sm"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    📷 이미지
+                  </button>
+                  <button
+                    onClick={() => setInputMode("text")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium transition-all ${
+                      inputMode === "text"
+                        ? "bg-white text-violet-600 shadow-sm"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    ✏️ 텍스트
+                  </button>
                 </div>
+
+                {inputMode === "image" ? (
+                  <ImageUploader onExtracted={handleExtracted} />
+                ) : (
+                  <TextInputer onExtracted={handleExtracted} />
+                )}
               </>
             ) : (
               <>
