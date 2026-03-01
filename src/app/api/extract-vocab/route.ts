@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { ExtractedWord } from "@/types/vocab";
 
-const client = new Anthropic();
+const client = new OpenAI();
 
 const VOCAB_JSON_FORMAT = `
 \`\`\`json
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No input provided" }, { status: 400 });
     }
 
-    let messageContent: Anthropic.Messages.MessageParam["content"];
+    let messageContent: OpenAI.Chat.ChatCompletionContentPart[];
 
     if (text) {
       messageContent = [
@@ -56,11 +56,9 @@ ${VOCAB_JSON_FORMAT}`,
     } else {
       messageContent = [
         {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: mimeType || "image/jpeg",
-            data: imageBase64,
+          type: "image_url",
+          image_url: {
+            url: `data:${mimeType || "image/jpeg"};base64,${imageBase64}`,
           },
         },
         {
@@ -75,14 +73,13 @@ ${VOCAB_JSON_FORMAT}`,
       ];
     }
 
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
       max_tokens: 4096,
       messages: [{ role: "user", content: messageContent }],
     });
 
-    const responseText =
-      response.content[0].type === "text" ? response.content[0].text : "";
+    const responseText = response.choices[0]?.message?.content ?? "";
 
     // Extract JSON from response
     const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) ||
@@ -94,7 +91,6 @@ ${VOCAB_JSON_FORMAT}`,
       const parsed = JSON.parse(jsonStr.trim());
       words = Array.isArray(parsed) ? parsed : [];
     } catch {
-      // Try to find array in text
       const arrMatch = responseText.match(/\[[\s\S]*\]/);
       if (arrMatch) {
         words = JSON.parse(arrMatch[0]);
@@ -105,7 +101,7 @@ ${VOCAB_JSON_FORMAT}`,
   } catch (error) {
     console.error("Extract vocab error:", error);
     return NextResponse.json(
-      { error: "Failed to analyze image" },
+      { error: "Failed to analyze input" },
       { status: 500 }
     );
   }
