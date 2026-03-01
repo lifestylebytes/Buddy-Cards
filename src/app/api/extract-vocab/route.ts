@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { ExtractedWord } from "@/types/vocab";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -26,6 +29,13 @@ JSON만 반환하고 다른 텍스트는 포함하지 마세요.`;
 
 export async function POST(req: NextRequest) {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { imageBase64, mimeType, text } = await req.json();
 
     if (!imageBase64 && !text) {

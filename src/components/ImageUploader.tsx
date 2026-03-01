@@ -115,7 +115,7 @@ export default function ImageUploader({ onExtracted }: Props) {
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>밑줄 친 단어 분석 중...</span>
             </div>
-            <p className="text-sm text-slate-400">Claude AI가 어휘를 추출하고 있어요</p>
+            <p className="text-sm text-slate-400">OpenAI가 어휘를 추출하고 있어요</p>
           </div>
         ) : preview ? (
           <div className="flex flex-col items-center gap-3 p-8">
