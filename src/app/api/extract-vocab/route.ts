@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { ExtractedWord } from "@/types/vocab";
 
-const client = new Anthropic();
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const VOCAB_JSON_FORMAT = `
 \`\`\`json
@@ -30,10 +32,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No input provided" }, { status: 400 });
     }
 
-    let messageContent: Anthropic.Messages.MessageParam["content"];
+    let userContent: OpenAI.Chat.ChatCompletionContentPart[];
 
     if (text) {
-      messageContent = [
+      userContent = [
         {
           type: "text",
           text: `다음 텍스트를 분석해서 학습할 만한 어휘를 최대 10개 골라주세요.
@@ -54,13 +56,12 @@ ${VOCAB_JSON_FORMAT}`,
         },
       ];
     } else {
-      messageContent = [
+      userContent = [
         {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: mimeType || "image/jpeg",
-            data: imageBase64,
+          type: "image_url",
+          image_url: {
+            url: `data:${mimeType || "image/jpeg"};base64,${imageBase64}`,
+            detail: "high",
           },
         },
         {
@@ -75,14 +76,13 @@ ${VOCAB_JSON_FORMAT}`,
       ];
     }
 
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
       max_tokens: 4096,
-      messages: [{ role: "user", content: messageContent }],
+      messages: [{ role: "user", content: userContent }],
     });
 
-    const responseText =
-      response.content[0].type === "text" ? response.content[0].text : "";
+    const responseText = response.choices[0]?.message?.content ?? "";
 
     const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) ||
       responseText.match(/\[[\s\S]*\]/) || [null, responseText];
