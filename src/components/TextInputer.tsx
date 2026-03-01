@@ -48,7 +48,7 @@ export default function TextInputer({ onExtracted }: Props) {
       <textarea
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
-        placeholder="영어 텍스트를 붙여넣거나 입력하세요&#10;&#10;예) The ephemeral nature of life makes every moment precious..."
+        placeholder="텍스트를 붙여넣거나 입력하세요&#10;&#10;예) 영어 문장, 단어 목록, 한국어 텍스트 등 무엇이든 OK"
         rows={8}
         disabled={loading}
         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 placeholder-slate-300 resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-all disabled:opacity-50"
