@@ -30,20 +30,38 @@ function pickPreferredEnglishVoice(voices: SpeechSynthesisVoice[]) {
   return us || englishVoices[0];
 }
 
-export function speakEnglish(text: string): void {
-  if (!text.trim()) return;
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
+function createUtterance(text: string, voice?: SpeechSynthesisVoice) {
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "en-US";
   utterance.rate = 0.96;
   utterance.pitch = 1.08;
-
-  const voice = pickPreferredEnglishVoice(window.speechSynthesis.getVoices());
   if (voice) {
     utterance.voice = voice;
   }
+  return utterance;
+}
 
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+export function speakEnglish(text: string): void {
+  if (!text.trim()) return;
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+  const synth = window.speechSynthesis;
+  const voices = synth.getVoices();
+  const preferredVoice = pickPreferredEnglishVoice(voices);
+  const utterance = createUtterance(text, preferredVoice || undefined);
+
+  synth.cancel();
+  synth.resume();
+  synth.speak(utterance);
+
+  // iOS Safari can return empty voices on first call; retry once when voices load.
+  if (voices.length === 0) {
+    const retryWithLoadedVoices = () => {
+      if (synth.speaking || synth.pending) return;
+      const nextVoice = pickPreferredEnglishVoice(synth.getVoices());
+      const retryUtterance = createUtterance(text, nextVoice || undefined);
+      synth.speak(retryUtterance);
+    };
+    synth.addEventListener("voiceschanged", retryWithLoadedVoices, { once: true });
+  }
 }
