@@ -128,10 +128,6 @@ export default function QuizMode({
   const { questions, current, selected, score, answered } = runtime;
 
   useEffect(() => {
-    setRuntime(loadRuntime(storageKey, cards, questionCount));
-  }, [cards, questionCount, storageKey]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     sessionStorage.setItem(storageKey, JSON.stringify(runtime));
   }, [runtime, storageKey]);

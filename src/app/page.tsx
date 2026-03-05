@@ -705,7 +705,7 @@ export default function Home() {
       ? cards.length
       : Math.min(cards.length, quizQuestionCount);
   const quizCardsSignature = cards
-    .map((card) => `${card.id}:${card.reviewCount}:${card.correctCount}`)
+    .map((card) => card.id)
     .join("|");
   const quizSessionId = `${quizCardsSignature}:${resolvedQuizQuestionCount}:${quizKey}`;
 
