@@ -355,6 +355,7 @@ export default function CardDeck({
   const [editSentenceKorean, setEditSentenceKorean] = useState("");
   const [editPage, setEditPage] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [randomOrderIds, setRandomOrderIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -405,6 +406,28 @@ export default function CardDeck({
     if (!matchFilter) return false;
     return !search.trim() || getSearchScore(c, search) >= 0;
   });
+  const baseFilteredIdsKey = baseFiltered.map((card) => card.id).join("|");
+
+  useEffect(() => {
+    if (sortBy !== "random") return;
+
+    setRandomOrderIds((previous) => {
+      const currentIds = baseFiltered.map((card) => card.id);
+      const previousSet = new Set(previous);
+      const hasSameMembers =
+        previous.length === currentIds.length &&
+        currentIds.every((id) => previousSet.has(id));
+
+      if (hasSameMembers) return previous;
+
+      const shuffled = [...currentIds];
+      for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    });
+  }, [sortBy, baseFiltered, baseFilteredIdsKey]);
 
   const filtered = search.trim()
     ? [...baseFiltered].sort((a, b) => {
@@ -412,6 +435,15 @@ export default function CardDeck({
         if (scoreDiff !== 0) return scoreDiff;
         return a.word.localeCompare(b.word);
       })
+    : sortBy === "random"
+      ? (() => {
+          const byId = new Map(baseFiltered.map((card) => [card.id, card]));
+          const ordered = randomOrderIds
+            .map((id) => byId.get(id))
+            .filter((card): card is VocabCard => !!card);
+          const leftovers = baseFiltered.filter((card) => !randomOrderIds.includes(card.id));
+          return [...ordered, ...leftovers];
+        })()
     : sortCards(baseFiltered, sortBy);
 
   useEffect(() => {
