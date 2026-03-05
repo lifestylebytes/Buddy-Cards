@@ -61,6 +61,7 @@ type Tab = "scan" | "flashcard" | "quiz" | "deck";
 type ScanStep = "upload" | "extracted";
 type InputMode = "image" | "text";
 type QuizState = "playing" | "result";
+type QuizQuestionCount = 10 | 20 | "all";
 type AuthStep = "request" | "verify";
 
 function mergeCards(primary: VocabCard[], secondary: VocabCard[]) {
@@ -162,6 +163,9 @@ export default function Home() {
   const [quizState, setQuizState] = useState<QuizState>("playing");
   const [quizScore, setQuizScore] = useState({ score: 0, total: 0 });
   const [quizKey, setQuizKey] = useState(0);
+  const [quizQuestionCount, setQuizQuestionCount] =
+    useState<QuizQuestionCount>(10);
+  const [quizAutoSpeak, setQuizAutoSpeak] = useState(true);
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const [shuffleFlashcards, setShuffleFlashcards] = useState(false);
   const [showFlashcardMenu, setShowFlashcardMenu] = useState(false);
@@ -696,6 +700,14 @@ export default function Home() {
   const authCooldownSeconds = authCooldownUntil
     ? Math.max(0, Math.ceil((authCooldownUntil - Date.now()) / 1000))
     : 0;
+  const resolvedQuizQuestionCount =
+    quizQuestionCount === "all"
+      ? cards.length
+      : Math.min(cards.length, quizQuestionCount);
+  const quizCardsSignature = cards
+    .map((card) => `${card.id}:${card.reviewCount}:${card.correctCount}`)
+    .join("|");
+  const quizSessionId = `${quizCardsSignature}:${resolvedQuizQuestionCount}:${quizKey}`;
 
   useEffect(() => {
     const nextDeck = reviewCards.length > 0 ? reviewCards : cards;
@@ -988,7 +1000,65 @@ export default function Home() {
                   원서 스캔하기
                 </button>
               </div>
-            ) : quizState === "result" ? (
+            ) : (
+              <>
+                <div className="mb-4 rounded-2xl border border-slate-100 bg-white px-3 py-2.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setQuizQuestionCount(10);
+                        setQuizState("playing");
+                        setQuizKey((k) => k + 1);
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        quizQuestionCount === 10
+                          ? "bg-violet-100 text-violet-700"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      10문제
+                    </button>
+                    <button
+                      onClick={() => {
+                        setQuizQuestionCount(20);
+                        setQuizState("playing");
+                        setQuizKey((k) => k + 1);
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        quizQuestionCount === 20
+                          ? "bg-violet-100 text-violet-700"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      20문제
+                    </button>
+                    <button
+                      onClick={() => {
+                        setQuizQuestionCount("all");
+                        setQuizState("playing");
+                        setQuizKey((k) => k + 1);
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        quizQuestionCount === "all"
+                          ? "bg-violet-100 text-violet-700"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      전체
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setQuizAutoSpeak((value) => !value)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                      quizAutoSpeak
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    자동음성 {quizAutoSpeak ? "켜짐" : "꺼짐"}
+                  </button>
+                </div>
+              {quizState === "result" ? (
               <QuizResult
                 score={quizScore.score}
                 total={quizScore.total}
@@ -1000,14 +1070,19 @@ export default function Home() {
               />
             ) : (
               <QuizMode
-                key={quizKey}
+                key={quizSessionId}
                 cards={cards}
+                questionCount={resolvedQuizQuestionCount}
+                autoSpeak={quizAutoSpeak}
+                sessionId={quizSessionId}
                 onCardUpdate={handleCardUpdate}
                 onComplete={(score, total) => {
                   setQuizScore({ score, total });
                   setQuizState("result");
                 }}
               />
+            )}
+              </>
             )}
           </div>
         )}
@@ -1303,13 +1378,7 @@ export default function Home() {
           {tabs.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => {
-                setTab(id);
-                if (id === "quiz") {
-                  setQuizState("playing");
-                  setQuizKey((k) => k + 1);
-                }
-              }}
+              onClick={() => setTab(id)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 transition-all ${
                 tab === id ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
               }`}

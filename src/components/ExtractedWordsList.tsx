@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, BookMarked, ChevronDown, ChevronUp, Volume2 } from "lucide-react";
 import { ExtractedWord, VocabCard } from "@/types/vocab";
+import { speakEnglish } from "@/lib/tts";
 
 interface Props {
   words: ExtractedWord[];
@@ -24,14 +25,6 @@ function WordItem({
     !!word.contextSentence &&
     !!word.exampleSentence &&
     word.contextSentence.trim() === word.exampleSentence.trim();
-
-  const speak = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(word.word);
-    utterance.lang = "en-US";
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  };
 
   return (
     <div
@@ -73,7 +66,7 @@ function WordItem({
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={speak}
+                onClick={() => speakEnglish(word.word)}
                 className="text-slate-400 hover:text-slate-600 mt-1 p-1"
                 aria-label="발음 듣기"
               >

@@ -1,61 +1,180 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { CheckCircle2, XCircle, Trophy, RotateCcw } from "lucide-react";
 import { VocabCard, QuizQuestion } from "@/types/vocab";
+import { speakEnglish } from "@/lib/tts";
 
-function generateQuestions(cards: VocabCard[]): QuizQuestion[] {
-  if (cards.length < 2) return [];
+function shuffle<T>(items: T[]): T[] {
+  const next = [...items];
 
-  return cards.map((card) => {
-    const others = cards.filter((c) => c.id !== card.id);
-    const wrongOptions = others
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3)
-      .map((c) => c.definition);
+  for (let i = next.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
 
-    const correctIndex = Math.floor(Math.random() * 4);
-    const options = [...wrongOptions];
-    options.splice(correctIndex, 0, card.definition);
+  return next;
+}
+
+function getQuizLabel(card: VocabCard): string {
+  return card.koreanDefinition || card.definition;
+}
+
+function generateQuestions(cards: VocabCard[], questionCount: number): QuizQuestion[] {
+  if (cards.length < 2 || questionCount < 2) return [];
+
+  return shuffle(cards)
+    .slice(0, Math.min(cards.length, questionCount))
+    .map((card) => {
+      const correctLabel = getQuizLabel(card);
+      const wrongOptions = shuffle(
+        cards
+          .filter((c) => c.id !== card.id)
+          .map((c) => getQuizLabel(c))
+          .filter((label) => label !== correctLabel)
+      ).slice(0, 3);
+
+      const options = shuffle([correctLabel, ...wrongOptions]);
+      const correctIndex = options.findIndex((option) => option === correctLabel);
+
+      return {
+        card,
+        type: "definition",
+        options,
+        correctIndex,
+      };
+    });
+}
+
+interface QuizRuntimeState {
+  questions: QuizQuestion[];
+  current: number;
+  selected: number | null;
+  score: number;
+  answered: boolean;
+}
+
+function getFallbackRuntime(cards: VocabCard[], questionCount: number): QuizRuntimeState {
+  return {
+    questions: generateQuestions(cards, questionCount),
+    current: 0,
+    selected: null,
+    score: 0,
+    answered: false,
+  };
+}
+
+function loadRuntime(
+  storageKey: string,
+  cards: VocabCard[],
+  questionCount: number
+): QuizRuntimeState {
+  const fallback = getFallbackRuntime(cards, questionCount);
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return fallback;
+
+    const parsed = JSON.parse(raw) as Partial<QuizRuntimeState>;
+    if (
+      !Array.isArray(parsed.questions) ||
+      typeof parsed.current !== "number" ||
+      typeof parsed.score !== "number" ||
+      typeof parsed.answered !== "boolean"
+    ) {
+      return fallback;
+    }
+
+    const questions = parsed.questions as QuizQuestion[];
+    if (questions.length < 2) return fallback;
+
+    const current = Math.max(0, Math.min(parsed.current, questions.length - 1));
+    const selected = typeof parsed.selected === "number" ? parsed.selected : null;
 
     return {
-      card,
-      type: "definition",
-      options,
-      correctIndex,
+      questions,
+      current,
+      selected,
+      score: parsed.score,
+      answered: parsed.answered,
     };
-  });
+  } catch {
+    return fallback;
+  }
 }
 
 interface Props {
   cards: VocabCard[];
   onComplete: (score: number, total: number) => void;
   onCardUpdate: (card: VocabCard) => void;
+  questionCount: number;
+  autoSpeak: boolean;
+  sessionId: string;
 }
 
-export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
-  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [current, setCurrent] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [score, setScore] = useState(0);
-  const [answered, setAnswered] = useState(false);
+export default function QuizMode({
+  cards,
+  onComplete,
+  onCardUpdate,
+  questionCount,
+  autoSpeak,
+  sessionId,
+}: Props) {
+  const storageKey = `buddy-cards-quiz-runtime:${sessionId}`;
+  const [runtime, setRuntime] = useState<QuizRuntimeState>(() =>
+    loadRuntime(storageKey, cards, questionCount)
+  );
+  const { questions, current, selected, score, answered } = runtime;
 
   useEffect(() => {
-    const q = generateQuestions(cards).sort(() => Math.random() - 0.5);
-    setQuestions(q);
-  }, [cards]);
+    setRuntime(loadRuntime(storageKey, cards, questionCount));
+  }, [cards, questionCount, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem(storageKey, JSON.stringify(runtime));
+  }, [runtime, storageKey]);
+
+  useEffect(() => {
+    if (!autoSpeak) return;
+    const currentQuestion = questions[current];
+    if (!currentQuestion) return;
+    speakEnglish(currentQuestion.card.word);
+  }, [autoSpeak, current, questions]);
+
+  const handleNext = useCallback(() => {
+    if (current + 1 >= questions.length) {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(storageKey);
+      }
+      onComplete(score, questions.length);
+      return;
+    }
+
+    setRuntime((prev) => ({
+      ...prev,
+      current: prev.current + 1,
+      selected: null,
+      answered: false,
+    }));
+  }, [current, onComplete, questions.length, score, storageKey]);
+
+  useEffect(() => {
+    if (!answered) return;
+    const timer = window.setTimeout(() => {
+      handleNext();
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [answered, handleNext]);
 
   const handleSelect = useCallback(
     (idx: number) => {
       if (answered) return;
-      setSelected(idx);
-      setAnswered(true);
 
       const q = questions[current];
       const correct = idx === q.correctIndex;
-      if (correct) setScore((s) => s + 1);
 
-      // update card stats
       const updated: VocabCard = {
         ...q.card,
         reviewCount: q.card.reviewCount + 1,
@@ -67,20 +186,16 @@ export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
             : "learning",
       };
       onCardUpdate(updated);
+
+      setRuntime((prev) => ({
+        ...prev,
+        selected: idx,
+        answered: true,
+        score: prev.score + (correct ? 1 : 0),
+      }));
     },
     [answered, current, questions, onCardUpdate]
   );
-
-  const handleNext = () => {
-    if (current + 1 >= questions.length) {
-      onComplete(score + (selected === questions[current].correctIndex ? 0 : 0), questions.length);
-      // Note: score is already updated in handleSelect
-    } else {
-      setCurrent((c) => c + 1);
-      setSelected(null);
-      setAnswered(false);
-    }
-  };
 
   if (questions.length === 0) {
     return (
@@ -94,8 +209,7 @@ export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
   const progress = ((current + 1) / questions.length) * 100;
 
   return (
-    <div className="w-full max-w-lg mx-auto space-y-6">
-      {/* Progress */}
+    <div className="w-full max-w-lg mx-auto space-y-4 pt-1">
       <div>
         <div className="flex justify-between text-sm text-slate-400 mb-1.5">
           <span>문제 {current + 1} / {questions.length}</span>
@@ -109,16 +223,13 @@ export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
         </div>
       </div>
 
-      {/* Question */}
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-lg p-8 text-center">
-        <p className="text-sm text-slate-400 mb-4">다음 단어의 뜻은?</p>
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-lg p-6 text-center">
         <h2 className="text-4xl font-bold text-slate-800 mb-2">{q.card.word}</h2>
         {q.card.pronunciation && (
           <p className="text-slate-400">{q.card.pronunciation}</p>
         )}
       </div>
 
-      {/* Options */}
       <div className="space-y-2.5">
         {q.options.map((option, idx) => {
           let style = "bg-white border-slate-100 text-slate-700 hover:border-amber-300 hover:bg-amber-50";
@@ -139,7 +250,7 @@ export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
               key={idx}
               onClick={() => handleSelect(idx)}
               disabled={answered}
-              className={`w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center gap-3 ${style}`}
+              className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all flex items-center gap-3 ${style}`}
             >
               <span className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-sm font-bold flex-shrink-0">
                 {String.fromCharCode(65 + idx)}
@@ -157,12 +268,16 @@ export default function QuizMode({ cards, onComplete, onCardUpdate }: Props) {
       </div>
 
       {answered && (
-        <button
-          onClick={handleNext}
-          className="w-full py-4 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-2xl font-semibold hover:from-amber-500 hover:to-orange-600 transition-all shadow-lg shadow-orange-100 active:scale-95"
-        >
-          {current + 1 >= questions.length ? "결과 보기" : "다음 문제"}
-        </button>
+        <div className="sticky bottom-3 pt-1">
+          <button
+            onClick={handleNext}
+            className="w-full py-4 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-2xl font-semibold hover:from-amber-500 hover:to-orange-600 transition-all shadow-lg shadow-orange-100 active:scale-95"
+          >
+            {current + 1 >= questions.length
+              ? "결과 보기 (2초 후 자동)"
+              : "다음 문제 (2초 후 자동)"}
+          </button>
+        </div>
       )}
     </div>
   );
