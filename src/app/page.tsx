@@ -216,31 +216,6 @@ export default function Home() {
       setReadingProgress(savedProgress);
     }
 
-    if (isCloudSyncEnabled()) {
-      void loadDeckFromCloud().then((remoteDeck) => {
-        if (!remoteDeck) return;
-        if (new Date(remoteDeck.updatedAt) < new Date(deck.updatedAt)) return;
-        setCards(remoteDeck.cards);
-
-        const highestRemotePage = remoteDeck.cards.reduce<number | null>((highest, card) => {
-          if (typeof card.sourcePage !== "number") return highest;
-          return highest === null ? card.sourcePage : Math.max(highest, card.sourcePage);
-        }, null);
-
-        if (
-          highestRemotePage !== null &&
-          (savedProgress.currentPage === null || highestRemotePage > savedProgress.currentPage)
-        ) {
-          const nextProgress = {
-            ...savedProgress,
-            currentPage: highestRemotePage,
-          };
-          setReadingProgress(nextProgress);
-          saveReadingProgress(nextProgress);
-        }
-      });
-    }
-
     const draft = loadScanDraft();
     if (draft && draft.words.length > 0) {
       setExtractedWords(draft.words);
@@ -299,6 +274,7 @@ export default function Home() {
     const userId = authSession.user.id;
     const localDeck = loadDeck();
     const remoteDeck = await loadDeckFromCloud();
+    setReadingProgress(loadReadingProgress());
 
     if (!remoteDeck) {
       if (localDeck.cards.length > 0) {

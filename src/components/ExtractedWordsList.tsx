@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Plus, BookMarked, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, BookMarked, ChevronDown, ChevronUp, Volume2 } from "lucide-react";
 import { ExtractedWord, VocabCard } from "@/types/vocab";
 
 interface Props {
@@ -20,6 +20,18 @@ function WordItem({
   onToggle: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const hasSameSentence =
+    !!word.contextSentence &&
+    !!word.exampleSentence &&
+    word.contextSentence.trim() === word.exampleSentence.trim();
+
+  const speak = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const utterance = new SpeechSynthesisUtterance(word.word);
+    utterance.lang = "en-US";
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
 
   return (
     <div
@@ -45,6 +57,11 @@ function WordItem({
           <div className="flex items-start justify-between gap-2">
             <div>
               <span className="font-bold text-slate-800 text-lg">{word.word}</span>
+              {typeof word.sourcePage === "number" && (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 font-semibold">
+                  p.{word.sourcePage}
+                </span>
+              )}
               {word.pronunciation && (
                 <span className="ml-2 text-sm text-slate-400">{word.pronunciation}</span>
               )}
@@ -54,16 +71,26 @@ function WordItem({
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="text-slate-400 hover:text-slate-600 mt-1"
-            >
-              {expanded ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={speak}
+                className="text-slate-400 hover:text-slate-600 mt-1 p-1"
+                aria-label="발음 듣기"
+              >
+                <Volume2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-slate-400 hover:text-slate-600 mt-1 p-1"
+                aria-label={expanded ? "접기" : "펼치기"}
+              >
+                {expanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
 
           <p className="text-sm text-slate-600 mt-1">{word.definition}</p>
@@ -76,14 +103,14 @@ function WordItem({
               {word.contextSentence && (
                 <div>
                   <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">
-                    원문
+                    원서 예문
                   </p>
                   <p className="text-sm text-slate-600 italic">
                     &ldquo;{word.contextSentence}&rdquo;
                   </p>
                 </div>
               )}
-              {word.exampleSentence && (
+              {word.exampleSentence && !hasSameSentence && (
                 <div>
                   <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">
                     예문
@@ -123,6 +150,8 @@ export default function ExtractedWordsList({ words, imageBase64, onSave }: Props
       return {
         id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`,
         word: w.word,
+        isFavorite: false,
+        sourcePage: w.sourcePage,
         pronunciation: w.pronunciation,
         partOfSpeech: w.partOfSpeech,
         definition: w.definition,

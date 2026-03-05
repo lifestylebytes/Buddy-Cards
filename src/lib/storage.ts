@@ -8,6 +8,8 @@ const READING_PROGRESS_KEY = "buddy-cards-reading-progress";
 const DELETED_CARDS_KEY = "buddy-cards-deleted-cards";
 const AUTH_SESSION_KEY = "buddy-cards-auth-session";
 const AUTH_MIGRATIONS_KEY = "buddy-cards-auth-migrations";
+const DEFAULT_DECK_DESCRIPTION = "Buddy Cards로 모은 어휘들";
+const DECK_META_PREFIX = "__BUDDY_DECK_META__:";
 
 export interface ScanDraft {
   words: ExtractedWord[];
@@ -40,6 +42,11 @@ interface RemoteDeckRow {
   cards: VocabCard[];
   created_at: string;
   updated_at: string;
+}
+
+interface DeckMetaPayload {
+  description?: string;
+  readingProgress?: ReadingProgress;
 }
 
 function getSupabaseConfig() {
@@ -124,14 +131,100 @@ function getOwnerKey(): string | null {
   return getDeviceId();
 }
 
-function mapRemoteDeck(row: RemoteDeckRow): CardDeck {
+function normalizeReadingProgress(
+  value: unknown
+): ReadingProgress | null {
+  if (!value || typeof value !== "object") return null;
+
+  const candidate = value as Partial<ReadingProgress>;
+  const fallback = getDefaultReadingProgress();
+  const title =
+    typeof candidate.title === "string" && candidate.title.trim()
+      ? candidate.title
+      : fallback.title;
+  const currentPage =
+    typeof candidate.currentPage === "number" && Number.isFinite(candidate.currentPage)
+      ? candidate.currentPage
+      : null;
+  const updatedAt =
+    typeof candidate.updatedAt === "string" && !Number.isNaN(new Date(candidate.updatedAt).getTime())
+      ? candidate.updatedAt
+      : new Date().toISOString();
+
   return {
+    title,
+    currentPage,
+    updatedAt,
+  };
+}
+
+function parseDeckDescription(
+  raw: string | null
+): { description: string; readingProgress: ReadingProgress | null } {
+  if (!raw) {
+    return {
+      description: DEFAULT_DECK_DESCRIPTION,
+      readingProgress: null,
+    };
+  }
+
+  if (!raw.startsWith(DECK_META_PREFIX)) {
+    return {
+      description: raw,
+      readingProgress: null,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw.slice(DECK_META_PREFIX.length)) as DeckMetaPayload;
+    const description =
+      typeof parsed.description === "string" && parsed.description.trim()
+        ? parsed.description
+        : DEFAULT_DECK_DESCRIPTION;
+
+    return {
+      description,
+      readingProgress: normalizeReadingProgress(parsed.readingProgress),
+    };
+  } catch {
+    return {
+      description: DEFAULT_DECK_DESCRIPTION,
+      readingProgress: null,
+    };
+  }
+}
+
+function buildDeckDescriptionWithMeta(
+  description: string | undefined,
+  readingProgress: ReadingProgress
+): string {
+  const safeDescription =
+    typeof description === "string" && description.trim()
+      ? description
+      : DEFAULT_DECK_DESCRIPTION;
+
+  return `${DECK_META_PREFIX}${JSON.stringify({
+    description: safeDescription,
+    readingProgress,
+  } satisfies DeckMetaPayload)}`;
+}
+
+function mapRemoteDeck(row: RemoteDeckRow): {
+  deck: CardDeck;
+  readingProgress: ReadingProgress | null;
+} {
+  const parsedDescription = parseDeckDescription(row.description);
+
+  return {
+    deck: {
     id: "default",
     name: row.name || "내 단어장",
-    description: row.description || "Buddy Cards로 모은 어휘들",
+    description: parsedDescription.description,
     cards: Array.isArray(row.cards) ? row.cards : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    },
+    readingProgress: parsedDescription.readingProgress,
   };
 }
 
@@ -139,7 +232,7 @@ export function getDefaultDeck(): CardDeck {
   return {
     id: "default",
     name: "내 단어장",
-    description: "Buddy Cards로 모은 어휘들",
+    description: DEFAULT_DECK_DESCRIPTION,
     cards: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -414,6 +507,7 @@ export function clearLocalDeckData(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(DECK_KEY);
   localStorage.removeItem(DELETED_CARDS_KEY);
+  localStorage.removeItem(READING_PROGRESS_KEY);
 }
 
 export function loadDeck(): CardDeck {
@@ -612,16 +706,30 @@ export function loadReadingProgress(): ReadingProgress {
   }
 }
 
-export function saveReadingProgress(progress: ReadingProgress): void {
+function persistReadingProgress(
+  progress: ReadingProgress,
+  syncCloud: boolean
+): void {
   if (typeof window === "undefined") return;
+
+  const nextProgress = {
+    ...progress,
+    updatedAt: new Date().toISOString(),
+  };
 
   localStorage.setItem(
     READING_PROGRESS_KEY,
-    JSON.stringify({
-      ...progress,
-      updatedAt: new Date().toISOString(),
-    })
+    JSON.stringify(nextProgress)
   );
+
+  if (!syncCloud) return;
+
+  const deck = loadDeck();
+  void saveDeckToCloud(deck);
+}
+
+export function saveReadingProgress(progress: ReadingProgress): void {
+  persistReadingProgress(progress, true);
 }
 
 export function isCloudSyncEnabled(): boolean {
@@ -656,7 +764,18 @@ export async function loadDeckFromCloud(): Promise<CardDeck | null> {
     const rows = (await res.json()) as RemoteDeckRow[];
     if (!Array.isArray(rows) || rows.length === 0) return null;
 
-    const deck = mapRemoteDeck(rows[0]);
+    const { deck, readingProgress } = mapRemoteDeck(rows[0]);
+
+    if (readingProgress) {
+      const localProgress = loadReadingProgress();
+      if (
+        new Date(readingProgress.updatedAt).getTime() >
+        new Date(localProgress.updatedAt).getTime()
+      ) {
+        persistReadingProgress(readingProgress, false);
+      }
+    }
+
     localStorage.setItem(DECK_KEY, JSON.stringify(deck));
     return deck;
   } catch {
@@ -677,7 +796,10 @@ export async function saveDeckToCloud(deck: CardDeck): Promise<void> {
   const payload = {
     device_id: ownerKey,
     name: deck.name,
-    description: deck.description || null,
+    description: buildDeckDescriptionWithMeta(
+      deck.description,
+      loadReadingProgress()
+    ),
     cards: deck.cards,
     created_at: deck.createdAt,
     updated_at: deck.updatedAt,
