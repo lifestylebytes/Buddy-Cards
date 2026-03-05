@@ -29,6 +29,9 @@ interface Props {
 type SortOption = "newest" | "oldest" | "az" | "za" | "page" | "random";
 type DisplayMode = 0 | 1 | 2;
 type StatusInfo = "new" | "learning" | "mastered" | null;
+type StatusFilter = "all" | "new" | "learning" | "mastered";
+
+const DECK_UI_STATE_KEY = "buddy-cards-deck-ui-state";
 
 const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
   { value: "newest", label: "최근 추가순" },
@@ -338,7 +341,7 @@ export default function CardDeck({
   onUpdateCard,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "new" | "learning" | "mastered">("all");
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [editingCard, setEditingCard] = useState<VocabCard | null>(null);
@@ -352,6 +355,50 @@ export default function CardDeck({
   const [editSentenceKorean, setEditSentenceKorean] = useState("");
   const [editPage, setEditPage] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(DECK_UI_STATE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        search?: string;
+        filter?: StatusFilter;
+        sortBy?: SortOption;
+      };
+      if (typeof parsed.search === "string") {
+        setSearch(parsed.search);
+      }
+      if (
+        parsed.filter === "all" ||
+        parsed.filter === "new" ||
+        parsed.filter === "learning" ||
+        parsed.filter === "mastered"
+      ) {
+        setFilter(parsed.filter);
+      }
+      if (
+        parsed.sortBy === "newest" ||
+        parsed.sortBy === "oldest" ||
+        parsed.sortBy === "az" ||
+        parsed.sortBy === "za" ||
+        parsed.sortBy === "page" ||
+        parsed.sortBy === "random"
+      ) {
+        setSortBy(parsed.sortBy);
+      }
+    } catch {
+      // ignore invalid state
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(
+      DECK_UI_STATE_KEY,
+      JSON.stringify({ search, filter, sortBy })
+    );
+  }, [search, filter, sortBy]);
 
   const baseFiltered = cards.filter((c) => {
     const matchFilter = filter === "all" || c.status === filter;

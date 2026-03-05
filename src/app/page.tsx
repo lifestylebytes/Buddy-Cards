@@ -704,10 +704,7 @@ export default function Home() {
     quizQuestionCount === "all"
       ? cards.length
       : Math.min(cards.length, quizQuestionCount);
-  const quizCardsSignature = cards
-    .map((card) => card.id)
-    .join("|");
-  const quizSessionId = `${quizCardsSignature}:${resolvedQuizQuestionCount}:${quizKey}`;
+  const quizSessionId = `quiz:${resolvedQuizQuestionCount}:${quizKey}`;
 
   useEffect(() => {
     const nextDeck = reviewCards.length > 0 ? reviewCards : cards;
@@ -1070,7 +1067,7 @@ export default function Home() {
               />
             ) : (
               <QuizMode
-                key={quizSessionId}
+                key={quizKey}
                 cards={cards}
                 questionCount={resolvedQuizQuestionCount}
                 autoSpeak={quizAutoSpeak}
